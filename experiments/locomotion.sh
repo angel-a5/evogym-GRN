@@ -4,7 +4,7 @@
 ### PARAMS INI ###
 
 # this should be the path for the output files (choose YOUR OWN dir!)
-out_path="/Users/karinemiras/projects/evogym/tmp_out"
+out_path="tmp_out"
 # /home/ripper8/projects/working_data
 
 # DO NOT use underline ( _ ) in the study and experiments names
@@ -27,14 +27,16 @@ udynamic="0.8"
 
 ####
 
-nruns=10
+nruns=1
 
-runs=""
-for i in $(seq 1 $nruns);
-do
-  runs="${runs}${i},"
-done
-runs="${runs%,}"
+# runs=""
+# for i in $(seq 1 $nruns);
+# do
+#   runs="${runs}${i},"
+# done
+# runs="${runs%,}"
+
+runs="run_4_diff"
 
 watchruns=$runs
 
@@ -49,6 +51,8 @@ num_generations="100"
 population_size="100"
 
 offspring_size="100"
+
+RUN_ANALYSIS=0
 
 # gens for box-plots, snapshots, videos (by default the last gen)
 #generations="1,$num_generations"

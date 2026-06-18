@@ -130,7 +130,9 @@ def _pick_for_experiment(values, exp_idx, field_name):
 
 
 def _db_path(out_path, study_name, experiment_name, run):
+    ###################################################################################
     return Path(out_path) / study_name / experiment_name / f"run_{run}" / f"run_{run}"
+    ###################################################################################
 
 
 def _table_columns(cur, table_name):
@@ -233,14 +235,18 @@ def _fetch_top_from_db(db_path: Path, metric: str, top_k: int, ascending: bool, 
     return out
 
 
-def _build_phenotype(genome, max_voxels, cube_face_size, voxel_types, env_conditions, plastic):
+def _build_phenotype(genome, max_voxels, cube_face_size, voxel_types, env_conditions, plastic, use_diffusion): #diffusion added
     cells = GRN(
+        promoter_threshold=0.95,
         max_voxels=max_voxels,
         cube_face_size=cube_face_size,
         genotype=genome,
         voxel_types=voxel_types,
         env_conditions=env_conditions,
         plastic=plastic,
+        ############################
+        use_diffusion=use_diffusion,
+        ############################
     ).develop()
     materials = np.zeros(cells.shape, dtype=int)
     for idx, value in np.ndenumerate(cells):
@@ -253,7 +259,7 @@ def main():
     params = _load_params_from_shell(Path(args.params_file).resolve())
 
     experiments = _split_csv(params.get("experiments"))
-    runs = [int(x) for x in _split_csv(params.get("runs"))]
+    runs = _split_csv(params.get("runs"))
     voxel_types_list = _split_csv(params.get("voxel_types"))
     env_conditions_list = _split_csv(params.get("env_conditions"))
 
@@ -278,6 +284,8 @@ def main():
 
         for run_order, run in enumerate(runs):
             db_path = _db_path(params["out_path"], params["study_name"], exp_name, run)
+            print("RUN =", run)
+            print("DB PATH =", db_path)
             if not db_path.exists():
                 print(f"[skip] DB missing: {db_path}")
                 continue
@@ -394,6 +402,12 @@ def main():
     for rank, entry in enumerate(selected, start=1):
         exp_name = entry["experiment_name"]
         run = entry["run"]
+
+        ######################################################
+        use_diffusion = "noDiff" not in str(run)
+        print(f"Replay diffusion enabled: {use_diffusion}")
+        ######################################################
+
         rid = entry["robot_id"]
         score = entry["metric_value"]
         generation = entry["generation"]
@@ -417,6 +431,9 @@ def main():
             voxel_types=voxel_types,
             env_conditions=env_conditions,
             plastic=plastic,
+            #############################
+            use_diffusion=use_diffusion,
+            #############################
         )
 
         vis_args.voxel_types = voxel_types
