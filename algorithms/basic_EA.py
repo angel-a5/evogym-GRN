@@ -4,6 +4,8 @@ import numpy as np
 from pathlib import Path
 import shutil
 import time
+# MINE
+import csv 
 
 # make repository folder the root
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,6 +17,41 @@ from simulation.simulation_resources import simulate_evogym_batch
 from simulation.prepare_robot_files import prepare_robot_files
 from utils.metrics import genopheno_abs_metrics, behavior_abs_metrics, relative_metrics
 from utils.config import Config
+
+
+###################################################
+#For TF activation pattern divergence  
+
+def active_tfs(tf_state, threshold=1.0):
+    return {
+        tf for tf, value in tf_state.items()
+        if value >= threshold}
+###################################################
+
+##############################################################################
+#For TF trajectory divergence over time 
+def tf_trajectory_divergence(history_a, history_b):
+
+    """
+    Compares TF concentration trajectories over developmental time.
+    Returns total difference across all timesteps and TFs.
+    """
+
+    if not history_a or not history_b:
+        return 0.0
+
+    max_len = max(len(history_a), len(history_b))
+    total_diff = 0.0
+
+    for t in range(max_len):
+        state_a = history_a[t] if t < len(history_a) else {}
+        state_b = history_b[t] if t < len(history_b) else {}
+        all_tfs = set(state_a.keys()) | set(state_b.keys())
+        for tf in all_tfs:
+            total_diff += abs(state_a.get(tf, 0.0) - state_b.get(tf, 0.0))
+
+    return total_diff
+#############################################################################
 
 
 # Simple non-standard EA:
@@ -54,16 +91,30 @@ class EA(Experiment):
 
     # ---------- EA-specific utilities ----------
 
-    def develop_phenotype(self, genome, voxel_types):
-        phenotype = GRN(
+    def develop_phenotype(self, individual, voxel_types):
+        #######################################################################
+        use_diffusion = ("noDiff" not in str(self.args.run))
+
+        print(f"[CHECK] run={self.args.run} | use_diffusion={use_diffusion}")
+        #######################################################################
+
+        grn = GRN(
             promoter_threshold=self.PROMOTOR_THRESHOLD,
             max_voxels=self.max_voxels,
             cube_face_size=self.cube_face_size,
             voxel_types=voxel_types,
-            genotype=genome,
+            genotype=individual.genome,
             env_conditions=self.env_conditions,
             plastic=self.plastic,
-        ).develop()
+            ###################################################
+            use_diffusion=use_diffusion,
+            ###################################################
+        )
+
+        phenotype = grn.develop()
+        
+        # save internal developmental data
+        individual.tf_history = grn.tf_history
 
         phenotype_materials = np.zeros(phenotype.shape, dtype=int)
         for index, value in np.ndenumerate(phenotype):
@@ -104,6 +155,7 @@ class EA(Experiment):
 
     def tournament_selection(self, population, k):
         return max(self.rng.sample(population, k), key=lambda ind: ind.fitness)
+    
 
     # ---------- Main run ----------
 
@@ -120,7 +172,7 @@ class EA(Experiment):
             self.update_novelty_archive(population)
 
             for ind in population:
-                ind.phenotype = self.develop_phenotype(ind.genome, self.voxel_types)
+                ind.phenotype = self.develop_phenotype(ind, self.voxel_types)
                 genopheno_abs_metrics(ind, self.args)
 
                 if self.args.run_simulation:
@@ -148,6 +200,68 @@ class EA(Experiment):
                 f"population size = {len(population)}, next id = {self.id_counter + 1}"
             )
 
+        ##################################################################################
+        #Making the csv
+        gen1_path = (
+            f"{self.args.out_path}/"
+            f"{self.args.study_name}/"
+            f"{self.args.experiment_name}/"
+            f"run_{self.args.run}/"
+            f"generation1_population.csv"
+        )
+
+        gen1_file = open(gen1_path, "w", newline="")
+        gen1_writer = csv.writer(gen1_file)
+        gen1_writer.writerow([
+            "seed",
+            "id",
+            "genome_length",
+            "genome"
+        ])
+
+        for ind in population:
+            gen1_writer.writerow([
+                self.seed,
+                ind.id,
+                len(ind.genome),
+                str(ind.genome)
+                ])
+            
+        gen1_file.close()
+
+        csv_path = (
+            f"{self.args.out_path}/"
+            f"{self.args.study_name}/"
+            f"{self.args.experiment_name}/"
+            f"run_{self.args.run}/"
+            f"parent_child_metrics.csv"
+            )
+        
+        
+        csv_file = open(csv_path, "w", newline="")
+        writer = csv.writer(csv_file)
+        writer.writerow([
+            "seed",
+            "generation",
+            "child_id",
+            "parent1_id",
+            "parent2_id",
+
+            "morph_diff_p1",
+            "morph_diff_p2",
+
+            "tf_diff_p1",
+            "tf_diff_p2",
+
+            "activation_diff_p1",
+            "activation_diff_p2",
+
+            "trajectory_diff_p1",
+            "trajectory_diff_p2"
+        ])
+
+        ##################################################################################
+
         for generation in range(start_gen, self.num_generations + 1):
             # Generate offspring
             offspring = []
@@ -165,7 +279,102 @@ class EA(Experiment):
                 self.mutate(child)
                 offspring.append(child)
 
-                child.phenotype = self.develop_phenotype(child.genome, self.voxel_types)
+                child.phenotype = self.develop_phenotype(child, self.voxel_types) # MEASURE FROM HERE, CHILD ALREADY EXISTS
+
+                # FIRST MEASURE, DIFFERERENCE BETWEEN THE PARENTS BODIES AND THE CHILD #############################
+                #Morphological Divergence
+                #aka. How many cells are different
+                diff_p1 = np.sum(parent1.phenotype != child.phenotype) 
+                diff_p2 = np.sum(parent2.phenotype != child.phenotype)
+                
+                print(f"Child {child.id} vs Parent1 {parent1.id}: {diff_p1}")
+                print(f"Child {child.id} vs Parent2 {parent2.id}: {diff_p2}")
+
+                #Internal changes are now stored so TF changes for parent and child can be measured here
+                #TF concentration divergence 
+                tf_p1 = parent1.tf_history[-1] if hasattr(parent1, "tf_history") and parent1.tf_history else {}
+                tf_p2 = parent2.tf_history[-1] if hasattr(parent2, "tf_history") and parent2.tf_history else {}
+                tf_child = child.tf_history[-1] if hasattr(child, "tf_history") and child.tf_history else {}
+                
+                all_tfs = set(tf_p1.keys()) | set(tf_p2.keys()) | set(tf_child.keys())
+
+                tf_changes_p1 = {}
+
+                for tf in all_tfs:
+                    diff = abs(tf_child.get(tf, 0.0) - tf_p1.get(tf, 0.0))
+                    tf_changes_p1[tf] = diff
+
+                tf_changes_p2 = {}
+
+                for tf in all_tfs:
+                    diff = abs(tf_child.get(tf, 0.0) - tf_p2.get(tf, 0.0))
+                    tf_changes_p2[tf] = diff
+
+                tf_diff_p1 = sum(abs(tf_child.get(tf, 0.0) - tf_p1.get(tf, 0.0)) for tf in all_tfs)
+                tf_diff_p2 = sum(abs(tf_child.get(tf, 0.0) - tf_p2.get(tf, 0.0)) for tf in all_tfs)
+
+                print(f"Child {child.id} TF diff vs Parent1 {parent1.id}: {tf_diff_p1:.4f}")
+                print(f"Child {child.id} TF diff vs Parent2 {parent2.id}: {tf_diff_p2:.4f}")
+
+                significant_changes_p1 = {
+                    tf: round(diff, 4)
+                    for tf, diff in tf_changes_p1.items()
+                    if diff > 1.0}
+
+                significant_changes_p2 = {
+                    tf: round(diff, 4)
+                    for tf, diff in tf_changes_p2.items()
+                    if diff > 1.0}
+
+                print(
+                    f"Child {child.id} significant TF changes vs Parent1 {parent1.id}: "
+                    f"{significant_changes_p1}")
+
+                print(
+                    f"Child {child.id} significant TF changes vs Parent2 {parent2.id}: "
+                    f"{significant_changes_p2}")
+
+                #TF activation pattern divergence
+                active_child = active_tfs(tf_child)
+
+                active_p1 = active_tfs(tf_p1)
+                active_p2 = active_tfs(tf_p2)
+
+                activation_diff_p1 = len(active_child.symmetric_difference(active_p1))
+                activation_diff_p2 = len(active_child.symmetric_difference(active_p2))
+
+                print(f"Child {child.id} activation diff vs Parent1 {parent1.id}: {activation_diff_p1}")
+                print(f"Child {child.id} activation diff vs Parent2 {parent2.id}: {activation_diff_p2}")
+
+                #TF trajectory divergence 
+                trajectory_diff_p1 = tf_trajectory_divergence(child.tf_history, parent1.tf_history)
+                trajectory_diff_p2 = tf_trajectory_divergence(child.tf_history, parent2.tf_history)
+
+                print(f"Child {child.id} trajectory diff vs Parent1 {parent1.id}: {trajectory_diff_p1:.4f}")
+                print(f"Child {child.id} trajectory diff vs Parent2 {parent2.id}: {trajectory_diff_p2:.4f}")
+
+                #csv file
+                writer.writerow([
+                    self.seed,
+                    generation,
+                    child.id,
+                    parent1.id,
+                    parent2.id,
+
+                    diff_p1,
+                    diff_p2,
+
+                    round(tf_diff_p1, 4),
+                    round(tf_diff_p2, 4),
+
+                    activation_diff_p1,
+                    activation_diff_p2,
+
+                    round(trajectory_diff_p1, 4),
+                    round(trajectory_diff_p2, 4)
+                ])
+                ###############################################################################################
+
                 genopheno_abs_metrics(child, self.args)
                 
                 if self.args.run_simulation:
@@ -211,6 +420,7 @@ class EA(Experiment):
             self._persist_generation_atomic(generation, offspring, population)
             print(f"Finished generation {generation}.")
 
+        csv_file.close()
         try:
             self.session.close()
         except Exception:
@@ -219,8 +429,6 @@ class EA(Experiment):
         path_robots = f"{self.args.out_path}/{self.args.study_name}/{self.args.experiment_name}/run_{self.args.run}/robots"
         if os.path.exists(path_robots):
             shutil.rmtree(path_robots)
-
-        print("Finished optimizing.")
 
     def update_novelty_archive(self, individuals):
         k = max(1, int(round(self.archive_add_frac * len(individuals))))

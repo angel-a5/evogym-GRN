@@ -50,13 +50,16 @@ class Experiment:
         self.rng = random.Random()
         info = self.session.query(ExperimentInfo).first()
         if info is None:
-            seed = random.randint(0, 2**32 - 1)
+            #seed = random.randint(0, 2**32 - 1)
+            seed = 1675610640
             print("seed (new)", seed)
+            self.seed = seed
             self.rng.seed(seed)
             self.session.add(ExperimentInfo(seed=seed))
             self.session.commit()
         else:
             print("seed (reused)", info.seed)
+            self.seed = info.seed
             self.rng.seed(info.seed)
 
         # running ID counter for Individuals/Robots
@@ -110,7 +113,7 @@ class Experiment:
             for r, gs in rows:
                 ind = self._individual_from_robot(r)
                 # rebuild phenotype
-                ind.phenotype = self.develop_phenotype(ind.genome, self.voxel_types)
+                ind.phenotype = self.develop_phenotype(ind, self.voxel_types)
 
                 # --- pass-through for relative metrics ---
                 for m in METRICS_REL:

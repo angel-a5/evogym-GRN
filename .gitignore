@@ -19,3 +19,5 @@ experiments/analysis/.ipynb_checkpoints/
 
 
 
+.DS_Store
+tmp_out/

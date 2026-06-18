@@ -12,7 +12,7 @@ class GRN:
     diffusion_sites_qt = 4
 
     def __init__(self, promoter_threshold=0.95, max_voxels=27, cube_face_size=3,
-                  genotype=None, voxel_types='withbone', env_conditions=None, plastic=None):
+                  genotype=None, voxel_types='withbone', env_conditions=None, plastic=None, use_diffusion=True): #diffusion added
 
         self.max_voxels = max_voxels
         self.genotype = genotype
@@ -67,6 +67,16 @@ class GRN:
 
         self.genotype = self.genotype[2:]
 
+        ############################
+        # For the TF summary 
+        self.tf_history = []
+        ###########################
+
+        ############################
+        # For diffusion
+        self.use_diffusion = use_diffusion
+        ###########################
+
     def develop(self):
         k_min, k_max = self.offphase_alternation_range
         span = (k_max - k_min + 1)
@@ -74,6 +84,17 @@ class GRN:
         self.offphase_alternation_k = min(k, k_max)
 
         self.develop_body()
+
+        #######################################################
+        # Testing TF concentrations summary 
+        print("Final TF concentrations:", self.tf_history[-1])
+
+        # Checking TF concentrations over time
+        #print("TF history:")
+        #for step, tf_state in enumerate(self.tf_history[:10]):
+        #    print(step, tf_state)
+        #######################################################
+        
         return self.phenotype
 
     def develop_body(self):
@@ -170,6 +191,20 @@ class GRN:
         self.maternal_injection()
         self.growth()
 
+    #####################################################################
+    # Summary of the TF concentrations through all the cells 
+    def summarize_tf_concentrations(self):
+        summary = {}
+        
+        for cell in self.cells:
+            for tf, concentrations in cell.transcription_factors.items():
+                if tf not in summary:
+                    summary[tf] = 0.0
+                summary[tf] += sum(concentrations)
+
+        return summary
+    #####################################################################
+
     # develop embryo from single cell
     def growth(self):
 
@@ -181,9 +216,13 @@ class GRN:
 
                 cell = self.cells[idxc]
                 self.increase(cell)
-                # for tf in cell.transcription_factors:
-                #     self.intra_diffusion(tf, cell)
-                #     self.inter_diffusion(tf, cell)
+                ###############################################################
+                #######################  DIFFUSION  ###########################
+                if self.use_diffusion:
+                    for tf in list(cell.transcription_factors.keys()):
+                        self.intra_diffusion(tf, cell)
+                        self.inter_diffusion(tf, cell)
+                ###############################################################
 
                 # try to grow new cell
                 self.place_voxel(cell)
@@ -197,8 +236,10 @@ class GRN:
                 # so that small increases have more chance to have an effect before decaying too much
                 # this means that first injection/parsing decays a bit before expression,
                 # but that is neglectable in comparison to injection size
-                for tf in cell.transcription_factors:
+                for tf in list(cell.transcription_factors.keys()):
                     self.decay(tf, cell)
+                
+            self.tf_history.append(self.summarize_tf_concentrations())
 
             if maximum_reached:
                 break
@@ -227,70 +268,51 @@ class GRN:
                         cell.transcription_factors[gene[self.transcription_factor_idx]][int(gene[self.diffusion_site_idx])] += \
                             float(gene[self.transcription_factor_amount_idx]) \
                             / float(self.increase_scaling)
+                        
 
-    # def inter_diffusion(self, tf, cell):
-    #
-    #     for ds in range(0, self.diffusion_sites_qt):
-    #
-    #         # back slot of all voxels but core share with parent
-    #         if ds == Core.BACK and \
-    #                 (type(cell.developed_voxel) == ActiveHinge or type(cell.developed_voxel) == Brick):
-    #             if cell.transcription_factors[tf][Core.BACK] >= self.inter_diffusion_rate:
-    #
-    #                 cell.transcription_factors[tf][Core.BACK] -= self.inter_diffusion_rate
-    #
-    #                 # updates or includes
-    #                 if cell.developed_voxel._parent.cell.transcription_factors.get(tf):
-    #                     cell.developed_voxel._parent.cell.transcription_factors[tf][cell.developed_voxel.direction_from_parent] += self.inter_diffusion_rate
-    #                 else:
-    #                     cell.developed_voxel._parent.cell.transcription_factors[tf] = [0] * self.diffusion_sites_qt
-    #                     cell.developed_voxel._parent.cell.transcription_factors[tf][cell.developed_voxel.direction_from_parent] += self.inter_diffusion_rate
-    #
-    #         # concentrations of sites without slot are also shared with single child in the case of joint
-    #         elif ds in [Core.LEFT, Core.FRONT, Core.RIGHT] and type(cell.developed_voxel) == ActiveHinge:
-    #
-    #             if cell.developed_voxel.children[Core.FRONT] is not None \
-    #                     and cell.transcription_factors[tf][ds] >= self.inter_diffusion_rate:
-    #                 cell.transcription_factors[tf][ds] -= self.inter_diffusion_rate
-    #
-    #                 # updates or includes
-    #                 if cell.developed_voxel.children[Core.FRONT].cell.transcription_factors.get(tf):
-    #                     cell.developed_voxel.children[Core.FRONT].cell.transcription_factors[tf][Core.BACK] += self.inter_diffusion_rate
-    #                 else:
-    #                     cell.developed_voxel.children[Core.FRONT].cell.transcription_factors[tf] = [0] * self.diffusion_sites_qt
-    #                     cell.developed_voxel.children[Core.FRONT].cell.transcription_factors[tf][Core.BACK] += self.inter_diffusion_rate
-    #         else:
-    #
-    #             # everyone shares with children
-    #             #TODO: this does not allow for children of active joint to receive diffusion: fix it
-    #             if cell.developed_voxel.children[ds] is not None \
-    #                 and cell.transcription_factors[tf][ds] >= self.inter_diffusion_rate:
-    #                 cell.transcription_factors[tf][ds] -= self.inter_diffusion_rate
-    #
-    #                 # updates or includes
-    #                 if cell.developed_voxel.children[ds].cell.transcription_factors.get(tf):
-    #                     cell.developed_voxel.children[ds].cell.transcription_factors[tf][Core.BACK] += self.inter_diffusion_rate
-    #                 else:
-    #                     cell.developed_voxel.children[ds].cell.transcription_factors[tf] = [0] * self.diffusion_sites_qt
-    #                     cell.developed_voxel.children[ds].cell.transcription_factors[tf][Core.BACK] += self.inter_diffusion_rate
+    ################################################################################################################################################################
+    #################################################   DIFFUSION   ################################################################################################
 
-    # def intra_diffusion(self, tf, cell):
-    #
-    #     # for each site in original slots order
-    #     for ds in range(0, self.diffusion_sites_qt):
-    #
-    #         # finds sites at right and left (cyclically)
-    #         ds_left = ds - 1 if ds - 1 >= 0 else self.diffusion_sites_qt - 1
-    #         ds_right = ds + 1 if ds + 1 <= self.diffusion_sites_qt - 1 else 0
-    #
-    #         # first right
-    #         if cell.transcription_factors[tf][ds] >= self.intra_diffusion_rate:
-    #             cell.transcription_factors[tf][ds] -= self.intra_diffusion_rate
-    #             cell.transcription_factors[tf][ds_right] += self.intra_diffusion_rate
-    #         #  then left
-    #         if cell.transcription_factors[tf][ds] >= self.intra_diffusion_rate:
-    #             cell.transcription_factors[tf][ds] -= self.intra_diffusion_rate
-    #             cell.transcription_factors[tf][ds_left] += self.intra_diffusion_rate
+    def inter_diffusion(self, tf, cell):
+
+        for ds in range(0, self.diffusion_sites_qt):
+            if cell.transcription_factors[tf][ds] < self.inter_diffusion_rate:
+                continue
+
+            neighbour_coord, neighbour_slot = self.find_child_slot(cell.xy_coordinates, ds)
+
+            if not all(0 <= i < self.cube_face_size for i in neighbour_coord):
+                continue
+
+            neighbour = self.phenotype[tuple(neighbour_coord)]
+
+            if neighbour == 0:
+                continue
+
+            cell.transcription_factors[tf][ds] -= self.inter_diffusion_rate
+
+            if tf not in neighbour.transcription_factors:
+                neighbour.transcription_factors[tf] = [0] * GRN.diffusion_sites_qt
+
+            neighbour.transcription_factors[tf][neighbour_slot] += self.inter_diffusion_rate
+
+    def intra_diffusion(self, tf, cell):
+
+        for ds in range(0, self.diffusion_sites_qt):
+            ds_left = ds - 1 if ds - 1 >= 0 else self.diffusion_sites_qt - 1
+            ds_right = ds + 1 if ds + 1 <= self.diffusion_sites_qt - 1 else 0
+
+            if cell.transcription_factors[tf][ds] >= self.intra_diffusion_rate:
+                cell.transcription_factors[tf][ds] -= self.intra_diffusion_rate
+                cell.transcription_factors[tf][ds_right] += self.intra_diffusion_rate
+
+            if cell.transcription_factors[tf][ds] >= self.intra_diffusion_rate:
+                cell.transcription_factors[tf][ds] -= self.intra_diffusion_rate
+                cell.transcription_factors[tf][ds_left] += self.intra_diffusion_rate
+    
+    #################################################   DIFFUSION   ################################################################################################
+    ################################################################################################################################################################
+
 
     def decay(self, tf, cell):
         # decay in all sites
