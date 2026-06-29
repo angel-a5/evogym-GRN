@@ -1,3 +1,7 @@
+# Diffusion vs No-Diffusion robot comparison 
+
+https://github.com/user-attachments/assets/5fca8af4-6184-4e35-9c3c-013b5ca4ed66
+
 # Base (GRN + EA with EvoGym simulation)
 
 This folder contains the evolutionary pipeline:
