@@ -4,7 +4,6 @@ import numpy as np
 from pathlib import Path
 import shutil
 import time
-# MINE
 import csv 
 
 # make repository folder the root
@@ -202,32 +201,32 @@ class EA(Experiment):
 
         ##################################################################################
         #Making the csv
-        gen1_path = (
-            f"{self.args.out_path}/"
-            f"{self.args.study_name}/"
-            f"{self.args.experiment_name}/"
-            f"run_{self.args.run}/"
-            f"generation1_population.csv"
-        )
+        # gen1_path = (
+        #     f"{self.args.out_path}/"
+        #     f"{self.args.study_name}/"
+        #     f"{self.args.experiment_name}/"
+        #     f"run_{self.args.run}/"
+        #     f"generation1_population.csv"
+        # )
 
-        gen1_file = open(gen1_path, "w", newline="")
-        gen1_writer = csv.writer(gen1_file)
-        gen1_writer.writerow([
-            "seed",
-            "id",
-            "genome_length",
-            "genome"
-        ])
+        # gen1_file = open(gen1_path, "w", newline="")
+        # gen1_writer = csv.writer(gen1_file)
+        # gen1_writer.writerow([
+        #     "seed",
+        #     "id",
+        #     "genome_length",
+        #     "genome"
+        # ])
 
-        for ind in population:
-            gen1_writer.writerow([
-                self.seed,
-                ind.id,
-                len(ind.genome),
-                str(ind.genome)
-                ])
+        # for ind in population:
+        #     gen1_writer.writerow([
+        #         self.seed,
+        #         ind.id,
+        #         len(ind.genome),
+        #         str(ind.genome)
+        #         ])
             
-        gen1_file.close()
+        # gen1_file.close()
 
         csv_path = (
             f"{self.args.out_path}/"
