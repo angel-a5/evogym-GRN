@@ -36,7 +36,8 @@ nruns=1
 # done
 # runs="${runs%,}"
 
-runs="run_4_diff"
+# Change the name of the run here, say diff in the name for diffusion, noDiff for no diffusion
+runs="run_10_diff"
 
 watchruns=$runs
 
